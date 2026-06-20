@@ -4,8 +4,9 @@ import (
 	"bufio"
 	"context"
 	"flag"
+	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -29,7 +30,7 @@ func main() {
 func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir string) int {
 	accessLogFile, err := os.OpenFile("linko.access.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		log.Printf("failed to open access log file: %v", err)
+		fmt.Printf("failed to open access log file: %v", err)
 		return 1
 	}
 	defer accessLogFile.Close()
@@ -37,12 +38,12 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 	defer closer()
 	st, err := store.New(dataDir, logger)
 	if err != nil {
-		logger.Printf("failed to create store: %v", err)
+		logger.Error(fmt.Sprintf("failed to create store: %v", err))
 		return 1
 	}
 	s := newServer(*st, httpPort, cancel, logger)
 	var serverErr error
-	logger.Printf("Linko is running on http://localhost:%d", httpPort)
+	logger.Debug("Linko is running on http://localhost:%d", httpPort)
 	go func() {
 		serverErr = s.start()
 	}()
@@ -50,14 +51,14 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	logger.Printf("Linko is shutting down")
+	logger.Debug("Linko is shutting down")
 
 	if err := s.shutdown(shutdownCtx); err != nil {
-		logger.Printf("failed to shutdown server: %v", err)
+		logger.Error(fmt.Sprintf("failed to shutdown server: %v", err))
 		return 1
 	}
 	if serverErr != nil {
-		logger.Printf("server error: %v", serverErr)
+		logger.Error(fmt.Sprintf("server error: %v", serverErr))
 		return 1
 	}
 	return 0
@@ -65,22 +66,33 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 
 type closeFunc func() error
 
-func initializeLogger(logFile string) (*log.Logger, closeFunc) {
+func initializeLogger(logFile string) (*slog.Logger, closeFunc) {
+	debugHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	})
 	if logFile != "" {
 		file, err := os.OpenFile(logFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 		if err != nil {
-			log.Fatalf("failed to open log file: %v", err)
+			slog.Error(fmt.Sprintf("failed to open log file: %v", err))
 		}
 		buffer := bufio.NewWriterSize(file, 8192)
 		mulWriter := io.MultiWriter(os.Stderr, buffer)
-		return log.New(mulWriter, "", log.LstdFlags), func() error {
+		infoHandler := slog.NewTextHandler(mulWriter, &slog.HandlerOptions{
+			Level: slog.LevelInfo,
+		})
+		handler := slog.NewMultiHandler(debugHandler, infoHandler)
+		return slog.New(handler), func() error {
 			buffer.Flush()
 			file.Close()
 			return nil
 		}
 	} else {
 		Writer := os.Stderr
-		return log.New(Writer, "", log.LstdFlags), func() error {
+		infoHandler := slog.NewTextHandler(Writer, &slog.HandlerOptions{
+			Level: slog.LevelInfo,
+		})
+		handler := slog.NewMultiHandler(debugHandler, infoHandler)
+		return slog.New(handler), func() error {
 			return nil
 		}
 	}
