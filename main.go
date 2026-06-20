@@ -38,12 +38,12 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 	defer closer()
 	st, err := store.New(dataDir, logger)
 	if err != nil {
-		logger.Error(fmt.Sprintf("failed to create store: %v", err))
+		logger.Error("failed to create store", "error", err)
 		return 1
 	}
 	s := newServer(*st, httpPort, cancel, logger)
 	var serverErr error
-	logger.Debug("Linko is running on http://localhost:%d", httpPort)
+	logger.Debug("Linko is running on http://localhost", "port", httpPort)
 	go func() {
 		serverErr = s.start()
 	}()
@@ -54,11 +54,11 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 	logger.Debug("Linko is shutting down")
 
 	if err := s.shutdown(shutdownCtx); err != nil {
-		logger.Error(fmt.Sprintf("failed to shutdown server: %v", err))
+		logger.Error("failed to shutdown server", "error", err)
 		return 1
 	}
 	if serverErr != nil {
-		logger.Error(fmt.Sprintf("server error: %v", serverErr))
+		logger.Error("server error", "error", serverErr)
 		return 1
 	}
 	return 0
@@ -73,11 +73,11 @@ func initializeLogger(logFile string) (*slog.Logger, closeFunc) {
 	if logFile != "" {
 		file, err := os.OpenFile(logFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 		if err != nil {
-			slog.Error(fmt.Sprintf("failed to open log file: %v", err))
+			slog.Error("failed to open log file", "error", err)
 		}
 		buffer := bufio.NewWriterSize(file, 8192)
 		mulWriter := io.MultiWriter(os.Stderr, buffer)
-		infoHandler := slog.NewTextHandler(mulWriter, &slog.HandlerOptions{
+		infoHandler := slog.NewJSONHandler(mulWriter, &slog.HandlerOptions{
 			Level: slog.LevelInfo,
 		})
 		handler := slog.NewMultiHandler(debugHandler, infoHandler)
@@ -88,7 +88,7 @@ func initializeLogger(logFile string) (*slog.Logger, closeFunc) {
 		}
 	} else {
 		Writer := os.Stderr
-		infoHandler := slog.NewTextHandler(Writer, &slog.HandlerOptions{
+		infoHandler := slog.NewJSONHandler(Writer, &slog.HandlerOptions{
 			Level: slog.LevelInfo,
 		})
 		handler := slog.NewMultiHandler(debugHandler, infoHandler)
