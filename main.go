@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -12,7 +13,9 @@ import (
 	"syscall"
 	"time"
 
+	"boot.dev/linko/internal/linkoerr"
 	"boot.dev/linko/internal/store"
+	pkgerr "github.com/pkg/errors"
 )
 
 func main() {
@@ -64,11 +67,43 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 	return 0
 }
 
+func replaceAttr(groups []string, a slog.Attr) slog.Attr {
+	if a.Key == "error" {
+		err, ok := a.Value.Any().(error)
+		if !ok {
+			return a
+		}
+		atts := linkoerr.Attrs(err)
+		errorAttrs := []slog.Attr{
+			slog.Attr{
+				Key:   "message",
+				Value: slog.StringValue(err.Error()),
+			},
+		}
+		errorAttrs = append(errorAttrs, atts...)
+
+		if stackErr, ok := errors.AsType[stackTracer](err); ok {
+			errorAttrs = append(errorAttrs, slog.Attr{
+				Key:   "stack_trace",
+				Value: slog.StringValue(fmt.Sprintf("%+v", stackErr.StackTrace())),
+			})
+		}
+		return slog.GroupAttrs("error", errorAttrs...)
+	}
+	return a
+}
+
 type closeFunc func() error
+
+type stackTracer interface {
+	error
+	StackTrace() pkgerr.StackTrace
+}
 
 func initializeLogger(logFile string) (*slog.Logger, closeFunc) {
 	debugHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
+		Level:       slog.LevelDebug,
+		ReplaceAttr: replaceAttr,
 	})
 	if logFile != "" {
 		file, err := os.OpenFile(logFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
@@ -78,7 +113,8 @@ func initializeLogger(logFile string) (*slog.Logger, closeFunc) {
 		buffer := bufio.NewWriterSize(file, 8192)
 		mulWriter := io.MultiWriter(os.Stderr, buffer)
 		infoHandler := slog.NewJSONHandler(mulWriter, &slog.HandlerOptions{
-			Level: slog.LevelInfo,
+			Level:       slog.LevelInfo,
+			ReplaceAttr: replaceAttr,
 		})
 		handler := slog.NewMultiHandler(debugHandler, infoHandler)
 		return slog.New(handler), func() error {
@@ -89,7 +125,8 @@ func initializeLogger(logFile string) (*slog.Logger, closeFunc) {
 	} else {
 		Writer := os.Stderr
 		infoHandler := slog.NewJSONHandler(Writer, &slog.HandlerOptions{
-			Level: slog.LevelInfo,
+			Level:       slog.LevelInfo,
+			ReplaceAttr: replaceAttr,
 		})
 		handler := slog.NewMultiHandler(debugHandler, infoHandler)
 		return slog.New(handler), func() error {
