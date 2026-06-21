@@ -69,7 +69,7 @@ func (s *server) handlerRedirect(w http.ResponseWriter, r *http.Request) {
 	longURL, err := s.store.Lookup(r.Context(), r.PathValue("shortCode"))
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			http.Error(w, "not found", http.StatusNotFound)
+			httpError(r.Context(), w, http.StatusNotFound, err)
 		} else {
 			s.logger.Error("failed to lookup URL", "error", err)
 			http.Error(w, "internal server error", http.StatusInternalServerError)

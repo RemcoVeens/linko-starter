@@ -82,7 +82,9 @@ func replaceAttr(groups []string, a slog.Attr) slog.Attr {
 			return a
 		}
 		atts := linkoerr.Attrs(err)
-		errorAttrs := []slog.Attr{}
+		errorAttrs := []slog.Attr{
+			slog.String("message", err.Error()),
+		}
 
 		if stackErr, ok := errors.AsType[stackTracer](err); ok {
 			errorAttrs = append(errorAttrs, slog.Attr{
@@ -104,7 +106,7 @@ func replaceAttr(groups []string, a slog.Attr) slog.Attr {
 		} else {
 			errorAttrs = append(errorAttrs, atts...)
 		}
-		return slog.GroupAttrs("errors", errorAttrs...)
+		return slog.GroupAttrs("error", errorAttrs...)
 	}
 	return a
 }
