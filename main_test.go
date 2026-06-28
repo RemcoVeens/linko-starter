@@ -29,7 +29,7 @@ func Test_requestLogger(t *testing.T) {
 	rr := httptest.NewRecorder()
 	loggedHandler.ServeHTTP(rr, req)
 
-	const expectedLogString = `time=2023-10-01T12:34:57.000Z level=INFO msg="Served request" duration=0 request_body_bytes=0 response_status=0 response_body_bytes=0 path=/api/stats` + "\n"
+	const expectedLogString = `time=2023-10-01T12:34:57.000Z level=INFO msg="Served request" duration=0 request_body_bytes=0 response_status=0 response_body_bytes=0 path=/api/stats request_id=""` + "\n"
 	const expectedStatusCode = http.StatusOK
 
 	if logBuffer.String() != expectedLogString {
