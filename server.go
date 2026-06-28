@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"boot.dev/linko/internal/store"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type server struct {
@@ -42,6 +43,7 @@ func newServer(store store.Store, port int, cancel context.CancelFunc, logger *s
 	mux.Handle("POST /api/shorten", s.authMiddleware(http.HandlerFunc(s.handlerShortenLink)))
 	mux.Handle("GET /api/stats", s.authMiddleware(http.HandlerFunc(s.handlerStats)))
 	mux.Handle("GET /api/urls", s.authMiddleware(http.HandlerFunc(s.handlerListURLs)))
+	mux.Handle("GET /metrics", promhttp.Handler())
 	mux.HandleFunc("GET /{shortCode}", s.handlerRedirect)
 	mux.HandleFunc("POST /admin/shutdown", s.handlerShutdown)
 
@@ -131,6 +133,22 @@ func RequestID(next http.Handler) http.Handler {
 	})
 }
 
+func redactIP(addr string) string {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return addr
+	}
+	ip4 := ip.To4()
+	if ip4 == nil {
+		return addr
+	}
+	return fmt.Sprintf("%d.%d.%d.x", ip4[0], ip4[1], ip4[2])
+}
+
 func RequestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		start := time.Now()
@@ -147,6 +165,7 @@ func RequestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 				slog.Int("response_body_bytes", spyWriter.bytesWritten),
 				slog.String("path", r.URL.Path),
 				slog.String("request_id", spyWriter.Header().Get("X-Request-ID")),
+				slog.String("client_ip", redactIP(r.RemoteAddr)),
 			}
 
 			lc := r.Context().Value(logContextKey).(*LogContext)
