@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -16,7 +15,10 @@ import (
 	"boot.dev/linko/internal/build"
 	"boot.dev/linko/internal/linkoerr"
 	"boot.dev/linko/internal/store"
+	"github.com/lmittmann/tint"
+	"github.com/mattn/go-isatty"
 	pkgerr "github.com/pkg/errors"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 func main() {
@@ -128,27 +130,29 @@ func initializeLogger(logFile string) (*slog.Logger, closeFunc) {
 		ReplaceAttr: replaceAttr,
 	})
 	if logFile != "" {
-		file, err := os.OpenFile(logFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
-		if err != nil {
-			slog.Error("failed to open log file", "error", err)
+		logger := &lumberjack.Logger{
+			Filename:   logFile,
+			MaxSize:    1,
+			MaxAge:     28,
+			MaxBackups: 10,
+			LocalTime:  true,
+			Compress:   true,
 		}
-		buffer := bufio.NewWriterSize(file, 8192)
-		mulWriter := io.MultiWriter(os.Stderr, buffer)
+		mulWriter := io.MultiWriter(os.Stderr, logger)
 		infoHandler := slog.NewJSONHandler(mulWriter, &slog.HandlerOptions{
 			Level:       slog.LevelInfo,
 			ReplaceAttr: replaceAttr,
 		})
 		handler := slog.NewMultiHandler(debugHandler, infoHandler)
 		return slog.New(handler), func() error {
-			buffer.Flush()
-			file.Close()
+			logger.Close()
 			return nil
 		}
 	} else {
 		Writer := os.Stderr
-		infoHandler := slog.NewJSONHandler(Writer, &slog.HandlerOptions{
-			Level:       slog.LevelInfo,
-			ReplaceAttr: replaceAttr,
+		isTTY := isatty.IsTerminal(Writer.Fd()) || isatty.IsCygwinTerminal(Writer.Fd())
+		infoHandler := tint.NewHandler(Writer, &tint.Options{
+			NoColor: !isTTY,
 		})
 		handler := slog.NewMultiHandler(debugHandler, infoHandler)
 		return slog.New(handler), func() error {
